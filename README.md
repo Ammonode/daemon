@@ -10,23 +10,17 @@ Pterodactyl yolk images all behave the same way.
 
 ## Install
 
-Requires Linux with Docker.
+Requires Linux (amd64 or arm64). The script installs Docker when missing,
+the daemon binary and a systemd service:
 
 ```bash
-curl -sSL https://get.docker.com/ | CHANNEL=stable sh
-systemctl enable --now docker
-
-curl -L -o /usr/local/bin/ammonode-daemon \
-  "https://github.com/Ammonode/daemon/releases/latest/download/ammonode-daemon_linux_$([[ "$(uname -m)" == "x86_64" ]] && echo amd64 || echo arm64)"
-chmod +x /usr/local/bin/ammonode-daemon
+curl -sSL https://raw.githubusercontent.com/Ammonode/daemon/main/install.sh | sudo bash
 ```
 
-In the panel open **Admin → Nodes → your node → Configuration**, copy the
-`ammonode-daemon configure ...` command and run it on the node. Then:
+In the panel open **Admin → Nodes → your node**, copy the configure command,
+run it on the node and start the daemon:
 
 ```bash
-curl -L -o /etc/systemd/system/ammonode-daemon.service \
-  https://raw.githubusercontent.com/Ammonode/daemon/main/contrib/ammonode-daemon.service
 systemctl enable --now ammonode-daemon
 ```
 
