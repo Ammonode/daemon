@@ -47,7 +47,7 @@ func versionCmd() *cobra.Command {
 }
 
 func configureCmd() *cobra.Command {
-	var panelURL, uuid, tokenID, token string
+	var panelURL, uuid, tokenID, token, sslCert, sslKey string
 	var port, sftp int
 	cmd := &cobra.Command{
 		Use:   "configure",
@@ -60,6 +60,11 @@ func configureCmd() *cobra.Command {
 			c.Remote, c.UUID, c.TokenID, c.Token = panelURL, uuid, tokenID, token
 			c.API.Port = port
 			c.System.SFTP.Port = sftp
+			// The panel passes certificate paths when the node uses HTTPS and is not behind a proxy.
+			if sslCert != "" && sslKey != "" {
+				c.API.SSL.Enabled = true
+				c.API.SSL.Cert, c.API.SSL.Key = sslCert, sslKey
+			}
 			if err := c.Save(configPath); err != nil {
 				return err
 			}
@@ -73,6 +78,8 @@ func configureCmd() *cobra.Command {
 	cmd.Flags().StringVar(&token, "token", "", "node token")
 	cmd.Flags().IntVar(&port, "port", 8080, "API port")
 	cmd.Flags().IntVar(&sftp, "sftp-port", 2022, "SFTP port")
+	cmd.Flags().StringVar(&sslCert, "ssl-cert", "", "TLS certificate (enables HTTPS together with --ssl-key)")
+	cmd.Flags().StringVar(&sslKey, "ssl-key", "", "TLS private key")
 	return cmd
 }
 
