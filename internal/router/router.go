@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ func New(cfg *config.Configuration, m *server.Manager) http.Handler {
 	mux.HandleFunc("POST /upload/file", r.uploadFiles)
 	mux.HandleFunc("GET /download/backup", r.downloadBackup)
 	mux.HandleFunc("POST /api/transfers/receive", r.receiveTransfer)
+	mux.HandleFunc("POST /api/transfers/receive/backup/{backup}", r.receiveTransferBackup)
 
 	// Panel endpoints authenticate with the node token.
 	panel := http.NewServeMux()
@@ -198,6 +200,7 @@ func (r *Router) createServer(w http.ResponseWriter, req *http.Request) {
 
 func (r *Router) deleteServer(w http.ResponseWriter, req *http.Request, s *server.Server) {
 	r.manager.Remove(s.ID())
+	_ = os.RemoveAll(incomingBackups(s.ID()))
 	go func() { _ = s.Destroy(context.Background()) }()
 	writeJSON(w, http.StatusNoContent, nil)
 }
