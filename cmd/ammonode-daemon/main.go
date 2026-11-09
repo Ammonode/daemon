@@ -19,6 +19,7 @@ import (
 	"github.com/ammonode/daemon/internal/remote"
 	"github.com/ammonode/daemon/internal/router"
 	"github.com/ammonode/daemon/internal/server"
+	"github.com/ammonode/daemon/internal/sftp"
 	"github.com/ammonode/daemon/internal/system"
 )
 
@@ -111,6 +112,11 @@ func run(*cobra.Command, []string) error {
 	defer manager.Shutdown()
 
 	go heartbeat(ctx, panel)
+	go func() {
+		if err := sftp.New(cfg, manager).Run(ctx); err != nil {
+			slog.Error("SFTP server stopped", "error", err)
+		}
+	}()
 
 	srv := &http.Server{
 		Addr:              cfg.API.Host + ":" + strconv.Itoa(cfg.API.Port),
