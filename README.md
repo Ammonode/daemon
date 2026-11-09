@@ -24,6 +24,8 @@ run it on the node and start the daemon:
 systemctl enable --now ammonode-daemon
 ```
 
+Full guide: https://ammonode.github.io/docs/guide/install-daemon
+
 ## Configuration
 
 `/etc/ammonode/config.yml`. Useful options:
