@@ -21,14 +21,20 @@ type BackupClaims struct {
 
 func (r *Router) createBackup(w http.ResponseWriter, req *http.Request, s *server.Server) {
 	var body struct {
-		UUID   string `json:"uuid"`
-		Ignore string `json:"ignore"`
+		UUID      string `json:"uuid"`
+		Ignore    string `json:"ignore"`
+		Adapter   string `json:"adapter"`
+		UploadURL string `json:"upload_url"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.UUID == "" {
 		writeError(w, http.StatusUnprocessableEntity, "uuid is required")
 		return
 	}
-	go s.Backup(body.UUID, body.Ignore)
+	if body.Adapter == "s3" && body.UploadURL == "" {
+		writeError(w, http.StatusUnprocessableEntity, "upload_url is required for s3 backups")
+		return
+	}
+	go s.Backup(body.UUID, body.Ignore, body.UploadURL)
 	writeJSON(w, http.StatusAccepted, nil)
 }
 
@@ -42,16 +48,23 @@ func (r *Router) deleteBackup(w http.ResponseWriter, req *http.Request, _ *serve
 
 func (r *Router) restoreBackup(w http.ResponseWriter, req *http.Request, s *server.Server) {
 	var body struct {
-		Truncate bool `json:"truncate"`
+		Truncate    bool   `json:"truncate"`
+		Adapter     string `json:"adapter"`
+		DownloadURL string `json:"download_url"`
 	}
 	_ = json.NewDecoder(req.Body).Decode(&body)
 	backup := req.PathValue("backup")
-	if _, err := os.Stat(server.BackupPath(backup)); err != nil {
+	if body.Adapter == "s3" {
+		if body.DownloadURL == "" {
+			writeError(w, http.StatusUnprocessableEntity, "download_url is required for s3 backups")
+			return
+		}
+	} else if _, err := os.Stat(server.BackupPath(backup)); err != nil {
 		writeError(w, http.StatusNotFound, "backup not found on this node")
 		return
 	}
 	go func() {
-		err := s.Restore(backup, body.Truncate)
+		err := s.Restore(backup, body.Truncate, body.DownloadURL)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = r.manager.Panel().SetBackupStatus(ctx, backup+"/restore", map[string]bool{"successful": err == nil})

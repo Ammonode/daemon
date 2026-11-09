@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -65,7 +67,8 @@ func sha256File(p string) (string, error) {
 }
 
 // Backup archives the whole server directory and reports the result to the panel.
-func (s *Server) Backup(backupUUID, ignore string) {
+// With uploadURL (a presigned S3 PUT) the archive is uploaded and the local copy removed.
+func (s *Server) Backup(backupUUID, ignore, uploadURL string) {
 	start := time.Now()
 	dst := BackupPath(backupUUID)
 	_ = os.MkdirAll(filepath.Dir(dst), 0o700)
@@ -88,6 +91,10 @@ func (s *Server) Backup(backupUUID, ignore string) {
 	if err == nil {
 		checksum, err = sha256File(dst)
 	}
+	if err == nil && uploadURL != "" {
+		err = uploadFile(dst, uploadURL)
+		os.Remove(dst)
+	}
 	if err != nil {
 		os.Remove(dst)
 		s.log.Error("backup failed", "backup", backupUUID, "error", err)
@@ -105,8 +112,16 @@ func (s *Server) Backup(backupUUID, ignore string) {
 
 // Restore stops the server and extracts a backup over its files. With truncate
 // every existing file is deleted first.
-func (s *Server) Restore(backupUUID string, truncate bool) error {
+func (s *Server) Restore(backupUUID string, truncate bool, downloadURL string) error {
 	src := BackupPath(backupUUID)
+	if downloadURL != "" {
+		// S3 backup: download to the local backup folder first, remove it afterwards.
+		if err := downloadFile(downloadURL, src); err != nil {
+			s.daemonMessage("Could not download the backup: " + err.Error())
+			return err
+		}
+		defer os.Remove(src)
+	}
 	if _, err := os.Stat(src); err != nil {
 		return errors.New("backup file not found on this node")
 	}
@@ -136,4 +151,58 @@ func (s *Server) Restore(backupUUID string, truncate bool) error {
 	}
 	s.daemonMessage("Backup restored.")
 	return nil
+}
+
+var transferClient = &http.Client{Timeout: 6 * time.Hour}
+
+func uploadFile(path, url string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPut, url, f)
+	if err != nil {
+		return err
+	}
+	req.ContentLength = st.Size()
+	req.Header.Set("Content-Type", "application/gzip")
+	res, err := transferClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(res.Body, 512))
+		return fmt.Errorf("upload failed: %s %s", res.Status, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
+func downloadFile(url, dst string) error {
+	res, err := transferClient.Get(url)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		return fmt.Errorf("download failed: %s", res.Status)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	f, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, res.Body); err != nil {
+		f.Close()
+		os.Remove(dst)
+		return err
+	}
+	return f.Close()
 }
