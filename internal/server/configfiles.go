@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/beevik/etree"
 	"gopkg.in/yaml.v3"
 
 	"github.com/ammonode/daemon/internal/config"
@@ -86,6 +87,8 @@ func applyOne(path string, f remote.ConfigFile, c remote.ServerConfiguration) er
 		return replaceStructured(path, f, c, yaml.Unmarshal, yaml.Marshal)
 	case "ini":
 		return replaceIni(path, f, c)
+	case "xml":
+		return replaceXML(path, f, c)
 	default:
 		return fmt.Errorf("unsupported parser %q", f.Parser)
 	}
@@ -250,4 +253,43 @@ func containsSection(lines []string, section string) bool {
 		}
 	}
 	return false
+}
+
+// replaceXML sets element text (or an attribute with "path.to.element[@attr]").
+// Missing elements are created; the rest of the document is kept as is.
+func replaceXML(path string, f remote.ConfigFile, c remote.ServerConfiguration) error {
+	doc := etree.NewDocument()
+	if b, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(b))) > 0 {
+		if err := doc.ReadFromBytes(b); err != nil {
+			return err
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, r := range f.Replace {
+		match, attr := r.Match, ""
+		if i := strings.Index(match, "[@"); i > 0 && strings.HasSuffix(match, "]") {
+			match, attr = match[:i], strings.TrimSuffix(match[i+2:], "]")
+		}
+		parts := strings.FieldsFunc(match, func(r rune) bool { return r == '.' || r == '/' })
+		if len(parts) == 0 {
+			continue
+		}
+		el := &doc.Element
+		for _, p := range parts {
+			next := el.SelectElement(p)
+			if next == nil {
+				next = el.CreateElement(p)
+			}
+			el = next
+		}
+		val := valueString(r.Value, c)
+		if attr != "" {
+			el.CreateAttr(attr, val)
+		} else {
+			el.SetText(val)
+		}
+	}
+	doc.Indent(2)
+	return doc.WriteToFile(path)
 }
