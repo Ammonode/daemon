@@ -56,15 +56,17 @@ type Server struct {
 	Events *Bus
 	Logs   *RingBuffer
 
-	installing  bool
-	stdin       io.WriteCloser
-	attachClose func()
-	startedAt   time.Time
-	lastCrash   time.Time
-	stopping    bool // user asked to stop, so an exit is not a crash
-	stats       Stats
-	powerLock   sync.Mutex
-	diskUsage   int64
+	installing bool
+	// Cancels a running installation (used when the server is deleted).
+	cancelInstall context.CancelFunc
+	stdin         io.WriteCloser
+	attachClose   func()
+	startedAt     time.Time
+	lastCrash     time.Time
+	stopping      bool // user asked to stop, so an exit is not a crash
+	stats         Stats
+	powerLock     sync.Mutex
+	diskUsage     int64
 
 	panel *remote.Client
 	log   *slog.Logger
@@ -468,6 +470,11 @@ func (s *Server) Restart(ctx context.Context) error {
 
 // Destroy removes the container and all files.
 func (s *Server) Destroy(ctx context.Context) error {
+	s.mu.Lock()
+	if s.cancelInstall != nil {
+		s.cancelInstall()
+	}
+	s.mu.Unlock()
 	_ = s.Kill(ctx)
 	cli, err := docker.Client()
 	if err == nil {

@@ -28,10 +28,14 @@ func (s *Server) Install(ctx context.Context, reinstall bool) error {
 		return ErrInstalling
 	}
 	s.installing = true
+	ctx, cancel := context.WithCancel(ctx)
+	s.cancelInstall = cancel
 	s.mu.Unlock()
 	defer func() {
+		cancel()
 		s.mu.Lock()
 		s.installing = false
+		s.cancelInstall = nil
 		s.mu.Unlock()
 	}()
 
@@ -42,6 +46,10 @@ func (s *Server) Install(ctx context.Context, reinstall bool) error {
 	}
 
 	err := s.runInstall(ctx)
+	if ctx.Err() != nil {
+		// Aborted because the server was deleted: nothing to report.
+		return ctx.Err()
+	}
 	s.Events.Publish(EventInstallDone)
 	if rerr := s.panel.SetInstallStatus(context.Background(), s.ID(), err == nil, reinstall); rerr != nil {
 		s.log.Error("failed to report install status", "error", rerr)
