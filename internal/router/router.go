@@ -245,7 +245,7 @@ func (r *Router) power(w http.ResponseWriter, req *http.Request, s *server.Serve
 	}
 	go func() {
 		if err := Power(s, body.Action); err != nil {
-			s.Events.Publish(server.EventDaemonMessage, "Power action failed: "+err.Error())
+			s.DaemonMessage("Power action failed: " + err.Error())
 		}
 	}()
 	writeJSON(w, http.StatusAccepted, nil)

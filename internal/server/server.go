@@ -136,6 +136,9 @@ func (s *Server) Stats() Stats {
 	return st
 }
 
+// DaemonMessage shows a message in the console and keeps it in the log buffer.
+func (s *Server) DaemonMessage(msg string) { s.daemonMessage(msg) }
+
 func (s *Server) daemonMessage(msg string) {
 	s.Events.Publish(EventDaemonMessage, msg)
 	s.Logs.Add("[Ammonode Daemon]: " + msg)
@@ -242,6 +245,9 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("server is already %s", st)
 	}
 	s.setState(StateStarting)
+	s.mu.Lock()
+	s.stopping = false
+	s.mu.Unlock()
 	s.Logs.Clear()
 	if cfg, err := s.panel.Server(ctx, s.ID()); err == nil {
 		s.SetConfig(cfg)
@@ -268,6 +274,12 @@ func (s *Server) Start(ctx context.Context) error {
 		s.setState(StateOffline)
 		return err
 	}
+	// A stop or restart requested while we were pulling/creating cancels this start.
+	if s.stopRequested() {
+		s.daemonMessage("Start cancelled.")
+		s.setState(StateOffline)
+		return nil
+	}
 	cli, _ := docker.Client()
 	if _, err := cli.ContainerStart(ctx, s.containerName(), client.ContainerStartOptions{}); err != nil {
 		s.setState(StateOffline)
@@ -275,7 +287,6 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	s.mu.Lock()
 	s.startedAt = time.Now()
-	s.stopping = false
 	s.mu.Unlock()
 	go s.pollStats()
 	return nil
@@ -389,12 +400,17 @@ func (s *Server) SendCommand(cmd string) error {
 
 // Stop asks the process to stop gracefully using the egg's stop configuration.
 func (s *Server) Stop(ctx context.Context) error {
-	if s.State() == StateOffline {
+	previous := s.State()
+	if previous == StateOffline {
 		return nil
 	}
 	s.mu.Lock()
 	s.stopping = true
 	s.mu.Unlock()
+	if previous == StateStarting && !s.attached() {
+		// Still pulling or creating: the pending start sees the request and cancels itself.
+		return nil
+	}
 	s.setState(StateStopping)
 	stop := s.Config().Process.Stop
 	cli, err := docker.Client()
@@ -403,7 +419,11 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 	switch {
 	case stop.Type == "command" || (stop.Type == "" && stop.Value != "" && stop.Value != "^C"):
-		return s.SendCommand(stop.Value)
+		if err := s.SendCommand(stop.Value); err == nil {
+			return nil
+		}
+		timeout := 30
+		_, err = cli.ContainerStop(ctx, s.containerName(), client.ContainerStopOptions{Timeout: &timeout})
 	case stop.Value == "^C" || stop.Type == "signal":
 		sig := "SIGINT"
 		if stop.Type == "signal" && stop.Value != "^C" {
@@ -454,7 +474,7 @@ func (s *Server) Kill(ctx context.Context) error {
 		return err
 	}
 	_, err = cli.ContainerKill(ctx, s.containerName(), client.ContainerKillOptions{Signal: "SIGKILL"})
-	if err != nil && strings.Contains(err.Error(), "is not running") {
+	if err != nil && (strings.Contains(err.Error(), "is not running") || strings.Contains(err.Error(), "No such container")) {
 		s.setState(StateOffline)
 		return nil
 	}
@@ -557,4 +577,16 @@ func (s *Server) Reattach(ctx context.Context) error {
 	go s.pollStats()
 	s.log.Info("reattached to running container")
 	return nil
+}
+
+func (s *Server) stopRequested() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.stopping
+}
+
+func (s *Server) attached() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.stdin != nil
 }
