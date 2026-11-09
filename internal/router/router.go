@@ -28,6 +28,7 @@ func New(cfg *config.Configuration, m *server.Manager) http.Handler {
 	mux.HandleFunc("GET /download/file", r.downloadFile)
 	mux.HandleFunc("POST /upload/file", r.uploadFiles)
 	mux.HandleFunc("GET /download/backup", r.downloadBackup)
+	mux.HandleFunc("POST /api/transfers/receive", r.receiveTransfer)
 
 	// Panel endpoints authenticate with the node token.
 	panel := http.NewServeMux()
@@ -53,6 +54,8 @@ func New(cfg *config.Configuration, m *server.Manager) http.Handler {
 	panel.HandleFunc("POST /api/servers/{uuid}/files/chmod", r.withServer(r.chmodFiles))
 	panel.HandleFunc("POST /api/servers/{uuid}/files/pull", r.withServer(r.pullFile))
 	panel.HandleFunc("POST /api/servers/{uuid}/backup", r.withServer(r.createBackup))
+	panel.HandleFunc("POST /api/transfers", r.prepareTransfer)
+	panel.HandleFunc("POST /api/servers/{uuid}/transfer", r.withServer(r.sendTransfer))
 	panel.HandleFunc("DELETE /api/servers/{uuid}/backup/{backup}", r.withServer(r.deleteBackup))
 	panel.HandleFunc("POST /api/servers/{uuid}/backup/{backup}/restore", r.withServer(r.restoreBackup))
 	mux.Handle("/api/", r.requireToken(panel))

@@ -135,3 +135,8 @@ func (c *Client) Heartbeat(ctx context.Context, info interface{}) error {
 func (c *Client) SetBackupStatus(ctx context.Context, uuid string, data interface{}) error {
 	return c.do(ctx, http.MethodPost, "/backups/"+uuid, data, nil)
 }
+
+// SetTransferStatus reports the outcome of a server transfer to the panel.
+func (c *Client) SetTransferStatus(ctx context.Context, uuid string, successful bool, message string) error {
+	return c.do(ctx, http.MethodPost, "/servers/"+uuid+"/transfer", map[string]interface{}{"successful": successful, "error": message}, nil)
+}
