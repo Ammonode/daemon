@@ -1,0 +1,19 @@
+[Unit]
+Description=Ammonode Daemon
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+User=root
+WorkingDirectory=/etc/ammonode
+LimitNOFILE=4096
+PIDFile=/var/run/ammonode/daemon.pid
+ExecStart=/usr/local/bin/ammonode-daemon
+Restart=on-failure
+StartLimitInterval=180
+StartLimitBurst=30
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
