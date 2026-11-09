@@ -1,0 +1,7 @@
+/ammonode-daemon
+/build/
+/dist/
+*.log
+config.yml
+.idea/
+.vscode/
