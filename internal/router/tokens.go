@@ -48,3 +48,10 @@ func parseToken[T jwt.Claims](secret, raw string, claims T) (T, error) {
 	}
 	return claims, nil
 }
+
+// UploadClaims authorises uploads into one server.
+type UploadClaims struct {
+	jwt.RegisteredClaims
+	ServerUUID string `json:"server_uuid"`
+	UserUUID   string `json:"user_uuid"`
+}
