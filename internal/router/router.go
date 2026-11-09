@@ -26,6 +26,8 @@ func New(cfg *config.Configuration, m *server.Manager) http.Handler {
 	// Browser endpoints authenticate with a short lived JWT signed by the panel.
 	mux.HandleFunc("GET /api/servers/{uuid}/ws", r.websocket)
 	mux.HandleFunc("GET /download/file", r.downloadFile)
+	mux.HandleFunc("POST /upload/file", r.uploadFiles)
+	mux.HandleFunc("GET /download/backup", r.downloadBackup)
 
 	// Panel endpoints authenticate with the node token.
 	panel := http.NewServeMux()
@@ -46,6 +48,13 @@ func New(cfg *config.Configuration, m *server.Manager) http.Handler {
 	panel.HandleFunc("PUT /api/servers/{uuid}/files/rename", r.withServer(r.renameFiles))
 	panel.HandleFunc("POST /api/servers/{uuid}/files/create-directory", r.withServer(r.createDirectory))
 	panel.HandleFunc("POST /api/servers/{uuid}/files/delete", r.withServer(r.deleteFiles))
+	panel.HandleFunc("POST /api/servers/{uuid}/files/compress", r.withServer(r.compressFiles))
+	panel.HandleFunc("POST /api/servers/{uuid}/files/decompress", r.withServer(r.decompressFile))
+	panel.HandleFunc("POST /api/servers/{uuid}/files/chmod", r.withServer(r.chmodFiles))
+	panel.HandleFunc("POST /api/servers/{uuid}/files/pull", r.withServer(r.pullFile))
+	panel.HandleFunc("POST /api/servers/{uuid}/backup", r.withServer(r.createBackup))
+	panel.HandleFunc("DELETE /api/servers/{uuid}/backup/{backup}", r.withServer(r.deleteBackup))
+	panel.HandleFunc("POST /api/servers/{uuid}/backup/{backup}/restore", r.withServer(r.restoreBackup))
 	mux.Handle("/api/", r.requireToken(panel))
 
 	return r.recover(r.cors(mux))
