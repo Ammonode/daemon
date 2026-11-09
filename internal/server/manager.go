@@ -30,7 +30,10 @@ func (m *Manager) Boot(ctx context.Context) error {
 		return err
 	}
 	for _, cfg := range list {
-		m.Add(cfg)
+		s := m.Add(cfg)
+		if err := s.Reattach(ctx); err != nil {
+			slog.Warn("could not reattach to server", "server", cfg.UUID, "error", err)
+		}
 	}
 	slog.Info("loaded servers from panel", "count", len(list))
 	return nil

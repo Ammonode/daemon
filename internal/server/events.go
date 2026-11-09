@@ -79,3 +79,9 @@ func (r *RingBuffer) Lines() []string {
 	defer r.mu.Unlock()
 	return append([]string(nil), r.lines...)
 }
+
+func (r *RingBuffer) Clear() {
+	r.mu.Lock()
+	r.lines = nil
+	r.mu.Unlock()
+}

@@ -240,6 +240,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("server is already %s", st)
 	}
 	s.setState(StateStarting)
+	s.Logs.Clear()
 	if cfg, err := s.panel.Server(ctx, s.ID()); err == nil {
 		s.SetConfig(cfg)
 	} else {
@@ -517,4 +518,36 @@ func (s *Server) pollStats() {
 		b, _ := json.Marshal(full)
 		s.Events.Publish(EventStats, string(b))
 	}
+}
+
+// Reattach reconnects to a container that kept running while the daemon was down.
+func (s *Server) Reattach(ctx context.Context) error {
+	cli, err := docker.Client()
+	if err != nil {
+		return err
+	}
+	res, err := cli.ContainerInspect(ctx, s.containerName(), client.ContainerInspectOptions{})
+	if err != nil || res.Container.State == nil || !res.Container.State.Running {
+		return nil
+	}
+	// Containers use a TTY, so logs are a plain stream (no multiplexing headers).
+	if logs, err := cli.ContainerLogs(ctx, s.containerName(), client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Tail: "100"}); err == nil {
+		sc := bufio.NewScanner(logs)
+		sc.Buffer(make([]byte, 64*1024), 1024*1024)
+		for sc.Scan() {
+			s.Logs.Add(strings.TrimRight(sc.Text(), "\r"))
+		}
+		logs.Close()
+	}
+	if err := s.attach(ctx); err != nil {
+		return err
+	}
+	started, _ := time.Parse(time.RFC3339Nano, res.Container.State.StartedAt)
+	s.mu.Lock()
+	s.startedAt = started
+	s.mu.Unlock()
+	s.setState(StateRunning)
+	go s.pollStats()
+	s.log.Info("reattached to running container")
+	return nil
 }
